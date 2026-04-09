@@ -205,3 +205,5 @@ single-finger tracking mode), the cleanest extension path is:
 
 No explicit license — this is a small-group project for internal use. If
 you want to reuse it beyond that, just open an issue and ask.
+# gesture_recognition
+Basic gesture recognition
