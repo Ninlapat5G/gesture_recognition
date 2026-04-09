@@ -1,0 +1,8 @@
+# Core dependencies for MediaPipe-based recognition
+mediapipe==0.10.14
+opencv-python==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+
+# GUI dependencies (only required if running the bundled tkinter apps)
+customtkinter==5.2.2

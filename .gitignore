@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude / assistant scratch
+.claude/
+CLAUDE.md
+
+# Project-local scratch folder (fonts, private datasets, trained weights, etc.)
+no_upto_git/
+
+# Trained model artifacts — rebuild from your own datasets
+*.mlp.json
+
+# Captured gesture model JSONs — keep these out of git by default
+test.json
+*_model.json
+
+# OS / misc
+*.log
