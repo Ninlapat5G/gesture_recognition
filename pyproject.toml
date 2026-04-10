@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gesture-recognition"
-version = "0.1.0"
+version = "0.0.2"
 description = "Lightweight hand, body, and face gesture classifiers built on MediaPipe and NumPy."
 requires-python = ">=3.10"
 dependencies = [

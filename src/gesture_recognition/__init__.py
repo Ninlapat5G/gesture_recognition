@@ -8,7 +8,7 @@ Quick start::
     from gesture_recognition.face import FaceRecognition
 """
 
-__version__ = "0.1.0"
+__version__ = "0.0.2"
 
 from gesture_recognition.hand.hand_recognition import HandRecognition
 from gesture_recognition.hand.hand_mlp import HandMLP
