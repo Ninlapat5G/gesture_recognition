@@ -12,9 +12,9 @@ import json
 import os
 from typing import Union, List, Tuple, Dict, Optional
 
-from body.body_mlp import BodyMLP
-from core.temporal_smoother import TemporalSmoother
-from core.utils import load_font, draw_thai_text, get_asset_path, load_dataset_from_folder
+from gesture_recognition.body.body_mlp import BodyMLP
+from gesture_recognition.core.temporal_smoother import TemporalSmoother
+from gesture_recognition.core.utils import load_font, draw_thai_text, get_asset_path, load_dataset_from_folder
 
 
 class BodyRecognition:

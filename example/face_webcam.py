@@ -12,9 +12,9 @@ import sys
 import os
 import cv2
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
-from face.face_recognition import FaceRecognition
+from gesture_recognition.face.face_recognition import FaceRecognition
 
 
 MODEL_PATH = "my_expressions.json"

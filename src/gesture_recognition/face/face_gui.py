@@ -15,10 +15,10 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 from tkinter import filedialog
 import os
 
-from face.face_mlp import FaceMLP
-from face.face_recognition import FaceRecognition
-from core.temporal_smoother import TemporalSmoother
-from core.utils import (load_font, get_asset_path, draw_thai_text,
+from gesture_recognition.face.face_mlp import FaceMLP
+from gesture_recognition.face.face_recognition import FaceRecognition
+from gesture_recognition.core.temporal_smoother import TemporalSmoother
+from gesture_recognition.core.utils import (load_font, get_asset_path, draw_thai_text,
                          display_frame_on_canvas, draw_countdown_overlay,
                          show_error_popup, show_success_popup)
 
@@ -675,3 +675,14 @@ class FaceExpressionManager:
         self.running = False
         self.face_mesh.close()
         self.window.destroy()
+
+
+def _cli_main():
+    """Entry point for ``gesture-face`` console script."""
+    root = ctk.CTk()
+    FaceExpressionManager(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    _cli_main()

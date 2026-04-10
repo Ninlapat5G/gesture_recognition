@@ -23,7 +23,7 @@ from typing import Callable, Dict, List, Tuple, Optional
 #
 # To point at a specific font file from your own code:
 #
-#     from hand.hand_recognition import HandRecognition
+#     from gesture_recognition.hand.hand_recognition import HandRecognition
 #     rec = HandRecognition(font_path="C:/path/to/your/thai-font.ttf")
 #
 # or set the environment variable once:
@@ -53,7 +53,8 @@ def get_asset_path(filename: str = DEFAULT_FONT_FILENAME) -> Optional[str]:
     if env_path and os.path.isfile(env_path):
         return env_path
 
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Climb from src/gesture_recognition/core/ → repo root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     candidates = [
         os.path.join(project_root, "assets", filename),
         os.path.join(project_root, "no_upto_git", filename),

@@ -16,10 +16,10 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 from tkinter import filedialog
 
-from hand.hand_recognition import HandRecognition
-from hand.hand_mlp import HandMLP
-from core.temporal_smoother import TemporalSmoother
-from core.utils import (
+from gesture_recognition.hand.hand_recognition import HandRecognition
+from gesture_recognition.hand.hand_mlp import HandMLP
+from gesture_recognition.core.temporal_smoother import TemporalSmoother
+from gesture_recognition.core.utils import (
     draw_thai_text, show_error_popup, show_success_popup,
     display_frame_on_canvas, draw_countdown_overlay,
     load_font, get_asset_path, load_dataset_from_folder
@@ -2017,6 +2017,12 @@ class GestureModelManager:
             pass
 
 
+def _cli_main():
+    """Entry point for ``gesture-hand`` console script."""
+    root = ctk.CTk()
+    GestureModelManager(root)
+    root.mainloop()
+
+
 if __name__ == "__main__":
-    app = GestureModelManager(ctk.CTk())
-    app.window.mainloop()
+    _cli_main()

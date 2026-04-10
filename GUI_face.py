@@ -1,8 +1,11 @@
-"""Entry point สำหรับ Face Expression Recognition GUI"""
+"""Entry point for Face Expression Recognition GUI (dev shortcut)."""
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
 import customtkinter as ctk
-from face.face_gui import FaceExpressionManager
+from gesture_recognition.face.face_gui import FaceExpressionManager
 
 if __name__ == "__main__":
     root = ctk.CTk()
-    app = FaceExpressionManager(root)
+    FaceExpressionManager(root)
     root.mainloop()

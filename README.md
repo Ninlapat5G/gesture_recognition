@@ -76,7 +76,15 @@ bigger framework:
 ```bash
 git clone https://github.com/<your-username>/gesture_recognition.git
 cd gesture_recognition
-pip install -r requirements.txt
+
+# Option A: editable install (recommended for development)
+pip install -e ".[gui]"
+
+# Option B: plain install
+pip install ".[gui]"
+
+# Option C: just the library, no GUI
+pip install .
 ```
 
 Python 3.10+ is recommended (MediaPipe doesn't play well with older or very
@@ -94,9 +102,9 @@ is found — everything still works, just with plain English glyphs.
 
 If you want Thai rendering, drop any Thai-capable TrueType font into
 `assets/` or point the library at a font of your choosing:
-ain
+
 ```python
-from hand.hand_recognition import HandRecognition
+from gesture_recognition.hand import HandRecognition
 
 # Option 1: pass it explicitly
 rec = HandRecognition(font_path="C:/Windows/Fonts/Tahoma.ttf")
@@ -110,10 +118,10 @@ rec = HandRecognition(font_path="C:/Windows/Fonts/Tahoma.ttf")
 
 ```python
 import cv2
-from hand.hand_recognition import HandRecognition
+from gesture_recognition.hand import HandRecognition
 
 rec = HandRecognition(mode="mae", smoothing_window=5)
-model = rec.load_model("my_gestures.json")  # captured via run_hand.py
+model = rec.load_model("my_gestures.json")  # captured via GUI_hand.py
 
 cap = cv2.VideoCapture(0)
 while True:
@@ -136,8 +144,10 @@ live in the [`example/`](example/) folder.
 
 ## Training your own model
 
-1. **Capture data.** Launch `python run_hand.py` (or `run_body.py` /
-   `run_face.py`), create a new model, record 10–30 frames per gesture.
+1. **Capture data.** Launch `python GUI_hand.py` (or `GUI_body.py` /
+   `GUI_face.py`), create a new model, record 10–30 frames per gesture.
+   After `pip install -e ".[gui]"` you can also use the console commands
+   `gesture-hand`, `gesture-body`, `gesture-face`.
 2. **Switch to MLP mode** in the GUI and hit *Train*. The training curve
    and final validation accuracy are displayed live.
 3. **Save.** The GUI writes two files:
@@ -153,14 +163,17 @@ that changes is which module you import.
 
 ```
 gesture_recognition/
-├── core/                  # Shared BaseMLP, smoother, utils
-├── hand/                  # Hand pipeline (MLP + high-level API + GUI)
-├── body/                  # Body pose pipeline
-├── face/                  # Face expression pipeline
-├── example/               # Minimal runnable usage examples
-├── run_hand.py            # GUI entry point
-├── run_body.py            # GUI entry point
-├── run_face.py            # GUI entry point
+├── src/
+│   └── gesture_recognition/   # installable package
+│       ├── core/              # BaseMLP, TemporalSmoother, utils
+│       ├── hand/              # Hand pipeline (MLP + API + GUI)
+│       ├── body/              # Body pose pipeline
+│       └── face/              # Face expression pipeline
+├── example/                   # Minimal runnable usage examples
+├── GUI_hand.py                # GUI entry point (dev shortcut)
+├── GUI_body.py
+├── GUI_face.py
+├── pyproject.toml             # pip install config
 ├── requirements.txt
 └── README.md
 ```
@@ -197,7 +210,7 @@ Pull requests, bug reports and feature ideas are all welcome. If you have a
 domain the current feature extractors don't cover (e.g. a foot pose, or a
 single-finger tracking mode), the cleanest extension path is:
 
-1. Subclass `core.base_mlp.BaseMLP` in a new module.
+1. Subclass `gesture_recognition.core.BaseMLP` in a new module.
 2. Implement `calculate_distances`, `calculate_angles` and `extract_features`.
 3. Write a thin high-level API wrapping it, mirroring `hand_recognition.py`.
 
@@ -205,5 +218,3 @@ single-finger tracking mode), the cleanest extension path is:
 
 No explicit license — this is a small-group project for internal use. If
 you want to reuse it beyond that, just open an issue and ask.
-# gesture_recognition
-Basic gesture recognition

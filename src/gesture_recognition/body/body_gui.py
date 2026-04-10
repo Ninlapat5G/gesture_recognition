@@ -16,10 +16,10 @@ from PIL import Image, ImageTk
 from tkinter import filedialog
 import os
 
-from body.body_mlp import BodyMLP
-from body.body_recognition import BodyRecognition
-from core.temporal_smoother import TemporalSmoother
-from core.utils import (load_font, get_asset_path, draw_thai_text,
+from gesture_recognition.body.body_mlp import BodyMLP
+from gesture_recognition.body.body_recognition import BodyRecognition
+from gesture_recognition.core.temporal_smoother import TemporalSmoother
+from gesture_recognition.core.utils import (load_font, get_asset_path, draw_thai_text,
                          display_frame_on_canvas,
                          show_error_popup, show_success_popup)
 
@@ -581,3 +581,14 @@ class BodyPoseManager:
         self.pose.close()
         self.recognition.close()
         self.window.destroy()
+
+
+def _cli_main():
+    """Entry point for ``gesture-body`` console script."""
+    root = ctk.CTk()
+    BodyPoseManager(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    _cli_main()

@@ -8,7 +8,7 @@ MLP classifier สำหรับจำแนกท่าทางมือ
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 
-from core.base_mlp import BaseMLP
+from gesture_recognition.core.base_mlp import BaseMLP
 
 
 class HandMLP(BaseMLP):

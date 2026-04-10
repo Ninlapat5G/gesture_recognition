@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gesture-recognition"
+version = "0.1.0"
+description = "Lightweight hand, body, and face gesture classifiers built on MediaPipe and NumPy."
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python==4.10.0.84",
+    "mediapipe==0.10.14",
+    "numpy==1.26.4",
+    "Pillow==10.4.0",
+]
+
+[project.optional-dependencies]
+gui = ["customtkinter==5.2.2"]
+
+[project.scripts]
+gesture-hand = "gesture_recognition.hand.hand_gui:_cli_main"
+gesture-body = "gesture_recognition.body.body_gui:_cli_main"
+gesture-face = "gesture_recognition.face.face_gui:_cli_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
