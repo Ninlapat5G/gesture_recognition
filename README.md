@@ -71,57 +71,58 @@ bigger framework:
   capturing samples, training MLPs with a live progress chart, comparing
   models on a held-out set, and running real-time recognition from a webcam.
 
-## Installation
+## Getting started
 
-```bash
-git clone https://github.com/<your-username>/gesture_recognition.git
-cd gesture_recognition
-
-# Option A: editable install (recommended for development)
-pip install -e ".[gui]"
-
-# Option B: plain install
-pip install ".[gui]"
-
-# Option C: just the library, no GUI
-pip install .
-```
-
-Python 3.10+ is recommended (MediaPipe doesn't play well with older or very
-new Python versions — see the [MediaPipe release notes][mp-rel] if pip
-complains).
+Python 3.10+ is recommended — MediaPipe is picky about Python versions,
+see the [release notes][mp-rel] if pip complains.
 
 [mp-rel]: https://github.com/google-ai-edge/mediapipe/releases
 
-### Thai font (optional)
+### 1. Install
 
-The project can draw Thai labels on the output frames, but the TTF file
-itself is **not** shipped with the repo (it lived under a restrictive
-license). The code will fall back to PIL's built-in bitmap font if no TTF
-is found — everything still works, just with plain English glyphs.
+```bash
+git clone https://github.com/Ninlapat5G/gesture_recognition.git
+cd gesture_recognition
 
-If you want Thai rendering, drop any Thai-capable TrueType font into
-`assets/` or point the library at a font of your choosing:
-
-```python
-from gesture_recognition.hand import HandRecognition
-
-# Option 1: pass it explicitly
-rec = HandRecognition(font_path="C:/Windows/Fonts/Tahoma.ttf")
-
-# Option 2: set an environment variable once
-# set GESTURE_FONT_PATH=C:\Windows\Fonts\Tahoma.ttf   (Windows)
-# export GESTURE_FONT_PATH=/usr/share/fonts/truetype/tlwg/Garuda.ttf   (Linux)
+# Editable install with GUI extras (recommended for getting started)
+pip install -e ".[gui]"
 ```
 
-## Quick start
+If you only need the library (e.g. for headless inference), drop the
+`[gui]` and `customtkinter` will not be installed.
+
+### 2. Capture a gesture model
+
+The library needs a JSON model to match against. Launch the capture GUI,
+record 10–30 frames per gesture, hit *Save*:
+
+```bash
+python run_gui.py hand        # → saves my_gestures.json
+# or, after  pip install -e ".[gui]" :
+gesture-hand
+```
+
+Swap `hand` for `body` or `face` to capture poses / expressions instead.
+
+### 3. Run an example
+
+```bash
+python example/hand_webcam.py
+```
+
+The script opens your webcam and overlays the recognized gesture on each
+frame. Press **ESC** to quit. More snippets live in [`example/`](example/).
+
+### Quick start (library usage)
 
 ```python
 import cv2
-from gesture_recognition.hand import HandRecognition
+from gesture_recognition import HandRecognition
 
+# mode="mae" → works instantly after capturing 2-3 samples per gesture.
+# mode="mlp" → more accurate, but requires training first in the GUI.
 rec = HandRecognition(mode="mae", smoothing_window=5)
-model = rec.load_model("my_gestures.json")  # captured via GUI_hand.py
+model = rec.load_model("my_gestures.json")
 
 cap = cv2.VideoCapture(0)
 while True:
@@ -139,22 +140,41 @@ cap.release()
 cv2.destroyAllWindows()
 ```
 
-More runnable snippets (webcam + still image for each of the three modules)
-live in the [`example/`](example/) folder.
+`status` is one of `"none"`, `"left"`, `"right"`, `"both"` — safe to
+compare as plain ASCII. The overlay drawn on the frame is localized.
 
-## Training your own model
+### Thai font (optional)
 
-1. **Capture data.** Launch `python GUI_hand.py` (or `GUI_body.py` /
-   `GUI_face.py`), create a new model, record 10–30 frames per gesture.
-   After `pip install -e ".[gui]"` you can also use the console commands
-   `gesture-hand`, `gesture-body`, `gesture-face`.
+The project can draw Thai labels on the output frames, but the TTF file
+itself is **not** shipped with the repo (it lived under a restrictive
+license). Without a font the code falls back to PIL's built-in bitmap
+font — everything still works, just with plain English glyphs.
+
+If you want Thai rendering, drop any Thai-capable TrueType font into
+`assets/` or point the library at a font of your choosing:
+
+```python
+from gesture_recognition import HandRecognition
+
+# Option 1: pass it explicitly
+rec = HandRecognition(font_path="C:/Windows/Fonts/Tahoma.ttf")
+
+# Option 2: set an environment variable once
+# set GESTURE_FONT_PATH=C:\Windows\Fonts\Tahoma.ttf   (Windows)
+# export GESTURE_FONT_PATH=/usr/share/fonts/truetype/tlwg/Garuda.ttf   (Linux)
+```
+
+## Training an MLP
+
+1. **Capture data** as above (step 2).
 2. **Switch to MLP mode** in the GUI and hit *Train*. The training curve
    and final validation accuracy are displayed live.
 3. **Save.** The GUI writes two files:
    - `my_gestures.json` — the raw captured feature vectors (human readable)
    - `my_gestures_left.mlp.json`, `..._right.mlp.json`, `..._both.mlp.json`
      — the trained MLP weights (whichever hand types had ≥2 classes)
-4. **Load at runtime** with `rec.load_model(...)` + `rec.load_mlp(...)`.
+4. **Load at runtime** with `rec.load_model(...)` + `rec.load_mlp(...)`,
+   then `rec.set_mode("mlp")`.
 
 The same flow works for body poses and face expressions — the only thing
 that changes is which module you import.
@@ -170,10 +190,8 @@ gesture_recognition/
 │       ├── body/              # Body pose pipeline
 │       └── face/              # Face expression pipeline
 ├── example/                   # Minimal runnable usage examples
-├── GUI_hand.py                # GUI entry point (dev shortcut)
-├── GUI_body.py
-├── GUI_face.py
-├── pyproject.toml             # pip install config
+├── run_gui.py                 # Unified GUI launcher: python run_gui.py {hand|body|face}
+├── pyproject.toml             # pip install config (console scripts live here too)
 ├── requirements.txt
 └── README.md
 ```

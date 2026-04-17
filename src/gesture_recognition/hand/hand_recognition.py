@@ -61,18 +61,29 @@ class HandRecognition:
     # ---- Model I/O ----
 
     def load_model(self, json_path: str) -> Dict:
-        """โหลด gesture model จาก JSON"""
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                model = json.load(f)
-            if 'left' not in model or 'right' not in model:
-                raise ValueError("โมเดลต้องมี 'left' และ 'right'")
-            if 'both' not in model:
-                model['both'] = {}
-            return model
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return {'left': {}, 'right': {}, 'both': {}}
+        """Load a gesture model JSON saved by the Hand GUI.
+
+        Raises:
+            FileNotFoundError: if the file does not exist. The message suggests
+                opening the GUI to capture gestures first.
+            ValueError: if the JSON exists but is not a valid hand model.
+        """
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(
+                f"Gesture model not found: {json_path}\n"
+                f"Tip: capture gestures first with  python run_gui.py hand  "
+                f"(or  gesture-hand  after pip install), then save the model "
+                f"and point MODEL_PATH at that file."
+            )
+        with open(json_path, 'r', encoding='utf-8') as f:
+            model = json.load(f)
+        if 'left' not in model or 'right' not in model:
+            raise ValueError(
+                f"{json_path} is not a valid hand model (missing 'left'/'right' keys)."
+            )
+        if 'both' not in model:
+            model['both'] = {}
+        return model
 
     def train_mlp(self, model: Dict, epochs: int = 200, verbose: bool = True,
                   progress_callback=None) -> Dict:
@@ -220,7 +231,7 @@ class HandRecognition:
         if isinstance(image_input, str):
             img = cv2.imread(image_input)
             if img is None:
-                return "ไม่พบ", [], []
+                return "none", [], []
         else:
             img = image_input.copy()
 
@@ -267,7 +278,7 @@ class HandRecognition:
         if not results.multi_hand_landmarks or not results.multi_handedness:
             if self.smoother:
                 self.smoother.reset()
-            return "ไม่พบ", [], [], results
+            return "none", [], [], results
 
         left_result = None
         right_result = None
@@ -314,13 +325,13 @@ class HandRecognition:
                 confidences.append(both_conf)
 
         if left_result and right_result:
-            status = "ทั้งหมด"
+            status = "both"
         elif left_result:
-            status = "ซ้าย"
+            status = "left"
         elif right_result:
-            status = "ขวา"
+            status = "right"
         else:
-            status = "ไม่พบ"
+            status = "none"
 
         return status, gestures, confidences, results
 
@@ -379,17 +390,24 @@ class HandRecognition:
         cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
 
         status_colors = {
-            "ไม่พบ": (0, 0, 255),
-            "ซ้าย": (0, 165, 255),
-            "ขวา": (0, 165, 255),
-            "ทั้งหมด": (0, 255, 0)
+            "none":  (0, 0, 255),
+            "left":  (0, 165, 255),
+            "right": (0, 165, 255),
+            "both":  (0, 255, 0),
+        }
+        status_labels = {
+            "none":  "ไม่พบ",
+            "left":  "ซ้าย",
+            "right": "ขวา",
+            "both":  "ทั้งหมด",
         }
         color = status_colors.get(status, (255, 255, 255))
-        img = draw_thai_text(img, f"Status: {status}", (20, 20), self.font, color)
+        label_text = status_labels.get(status, status)
+        img = draw_thai_text(img, f"Status: {label_text}", (20, 20), self.font, color)
 
         y_offset = 60
         for i, (gesture, conf) in enumerate(zip(gestures, confidences)):
-            label = "Left" if i == 0 and status in ["ซ้าย", "ทั้งหมด"] else "Right"
+            label = "Left" if i == 0 and status in ("left", "both") else "Right"
             text = f"{label}: {gesture} ({conf:.1f}%)"
             img = draw_thai_text(img, text, (20, y_offset), self.font, (0, 255, 0))
             y_offset += 40
@@ -441,7 +459,7 @@ class HandRecognition:
 
             for model, name in zip(models_list, model_names):
                 status, gestures, confidences, _ = self._predict_with_results(model, img)
-                predicted = gestures[0] if gestures else "ไม่พบ"
+                predicted = gestures[0] if gestures else "none"
                 is_correct = predicted == gt
                 if is_correct:
                     correct_counts[name] += 1

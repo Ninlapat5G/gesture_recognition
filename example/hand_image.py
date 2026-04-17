@@ -1,17 +1,18 @@
 """
-Run hand gesture recognition on a single image file.
+Run hand recognition on a single image file.
 
-Usage:
+Setup:
+    pip install -e .
+    python run_gui.py hand    # capture gestures and save as my_gestures.json
+
+Run:
     python example/hand_image.py path/to/image.jpg
 """
 
 import sys
-import os
 import cv2
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-
-from gesture_recognition.hand.hand_recognition import HandRecognition
+from gesture_recognition import HandRecognition
 
 
 MODEL_PATH = "my_gestures.json"
@@ -19,17 +20,21 @@ MODEL_PATH = "my_gestures.json"
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python example/hand_image.py <image_path>")
+        print("Usage: python example/hand_image.py <image_path>", file=sys.stderr)
         sys.exit(1)
 
     image_path = sys.argv[1]
     image = cv2.imread(image_path)
     if image is None:
-        print(f"Could not read image: {image_path}")
+        print(f"Could not read image: {image_path}", file=sys.stderr)
         sys.exit(1)
 
     rec = HandRecognition(mode="mae", smoothing_window=0)
-    model = rec.load_model(MODEL_PATH)
+    try:
+        model = rec.load_model(MODEL_PATH)
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     status, gestures, confidences, annotated = rec.predict_frame(
         model, image, show_gesture=1

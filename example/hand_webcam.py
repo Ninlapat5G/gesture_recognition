@@ -1,21 +1,20 @@
 """
 Real-time hand gesture recognition from a webcam.
 
-Usage:
-    1. Capture a gesture model via `python run_hand.py` and save it.
-    2. Point MODEL_PATH at the resulting JSON file.
-    3. Run:  python example/hand_webcam.py
-    4. Press ESC to quit.
+Setup (one-time):
+    pip install -e .          # from the repo root
+    python run_gui.py hand    # capture gestures and save as my_gestures.json
+
+Run:
+    python example/hand_webcam.py
+
+Press ESC to quit.
 """
 
 import sys
-import os
 import cv2
 
-# Allow running this file directly from the repo root (before pip install)
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-
-from gesture_recognition.hand.hand_recognition import HandRecognition
+from gesture_recognition import HandRecognition
 
 
 MODEL_PATH = "my_gestures.json"
@@ -24,12 +23,19 @@ FONT_PATH = None  # e.g. "C:/Windows/Fonts/Tahoma.ttf"
 
 
 def main():
+    # mode="mae"  → works instantly after capturing 2-3 samples per gesture.
+    # mode="mlp"  → more accurate, but requires training first in the GUI.
     rec = HandRecognition(
         font_path=FONT_PATH,
-        mode="mae",          # switch to "mlp" after training an MLP
+        mode="mae",
         smoothing_window=5,  # 0 disables temporal smoothing
     )
-    model = rec.load_model(MODEL_PATH)
+
+    try:
+        model = rec.load_model(MODEL_PATH)
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     # If you've trained an MLP, uncomment these two lines to use it:
     # rec.load_mlp(MODEL_PATH)
@@ -37,8 +43,8 @@ def main():
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("Cannot open webcam")
-        return
+        print("Cannot open webcam", file=sys.stderr)
+        sys.exit(1)
 
     while True:
         ok, frame = cap.read()

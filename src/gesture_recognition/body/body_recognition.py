@@ -50,15 +50,24 @@ class BodyRecognition:
     # ---- Model I/O ----
 
     def load_model(self, json_path: str) -> Dict:
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                model = json.load(f)
-            if 'poses' not in model:
-                model = {'poses': model}
-            return model
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return {'poses': {}}
+        """Load a body pose model JSON saved by the Body GUI.
+
+        Raises:
+            FileNotFoundError: if the file does not exist. The message suggests
+                opening the GUI to capture poses first.
+        """
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(
+                f"Pose model not found: {json_path}\n"
+                f"Tip: capture poses first with  python run_gui.py body  "
+                f"(or  gesture-body  after pip install), then save the model "
+                f"and point MODEL_PATH at that file."
+            )
+        with open(json_path, 'r', encoding='utf-8') as f:
+            model = json.load(f)
+        if 'poses' not in model:
+            model = {'poses': model}
+        return model
 
     def train_mlp(self, model_data: Dict, epochs: int = 300, verbose: bool = True,
                   progress_callback=None) -> Optional[Dict]:

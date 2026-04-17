@@ -1,8 +1,11 @@
-# Core dependencies for MediaPipe-based recognition
+# Core runtime dependencies for the gesture_recognition library.
+# (kept in sync with [project.dependencies] in pyproject.toml)
 mediapipe==0.10.14
 opencv-python==4.10.0.84
 numpy==1.26.4
 Pillow==10.4.0
 
-# GUI dependencies (only required if running the bundled tkinter apps)
-customtkinter==5.2.2
+# The capture/train GUIs also need customtkinter. Install it as an extra:
+#     pip install -e ".[gui]"
+# or pick it up directly:
+#     pip install customtkinter==5.2.2

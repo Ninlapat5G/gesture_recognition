@@ -1,20 +1,20 @@
 """
 Real-time face expression recognition from a webcam.
 
-Usage:
-    1. Capture a face model via `python run_face.py` and save it.
-    2. Point MODEL_PATH at the resulting JSON file.
-    3. Run:  python example/face_webcam.py
-    4. Press ESC to quit.
+Setup (one-time):
+    pip install -e .
+    python run_gui.py face    # capture expressions and save as my_expressions.json
+
+Run:
+    python example/face_webcam.py
+
+Press ESC to quit.
 """
 
 import sys
-import os
 import cv2
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-
-from gesture_recognition.face.face_recognition import FaceRecognition
+from gesture_recognition import FaceRecognition
 
 
 MODEL_PATH = "my_expressions.json"
@@ -22,13 +22,19 @@ FONT_PATH = None  # e.g. "C:/Windows/Fonts/Tahoma.ttf"
 
 
 def main():
+    # mode="mae" works instantly; switch to "mlp" once you've trained one.
     rec = FaceRecognition(
         font_path=FONT_PATH,
-        mode="mae",          # switch to "mlp" once you've trained one
+        mode="mae",
         smoothing_window=5,
         use_3d=True,
     )
-    model = rec.load_model(MODEL_PATH)
+
+    try:
+        model = rec.load_model(MODEL_PATH)
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     # If you've trained an MLP, uncomment to use it:
     # rec.load_mlp(MODEL_PATH)
@@ -36,8 +42,8 @@ def main():
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("Cannot open webcam")
-        return
+        print("Cannot open webcam", file=sys.stderr)
+        sys.exit(1)
 
     while True:
         ok, frame = cap.read()
