@@ -90,6 +90,19 @@ class BodyPoseManager:
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # =========================================================================
+    # Thread-safe GUI helper
+    # =========================================================================
+
+    def _after_safe(self, fn):
+        """Schedule fn on the main tkinter thread; swallow errors during shutdown."""
+        if not self.running:
+            return
+        try:
+            self.window.after(0, fn)
+        except Exception:
+            pass
+
+    # =========================================================================
     # Layout
     # =========================================================================
 
@@ -261,20 +274,21 @@ class BodyPoseManager:
     # =========================================================================
 
     def create_new_model(self):
-        dialog = ctk.CTkInputDialog(text="ชื่อไฟล์โมเดล (ไม่ต้องใส่ .json):", title="สร้างโมเดลใหม่")
-        filename = dialog.get_input()
+        filename = filedialog.asksaveasfilename(
+            title="สร้างโมเดลใหม่ — เลือกที่บันทึก",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")],
+            initialfile="body_model.json",
+        )
         if not filename:
             return
         if not filename.endswith('.json'):
             filename += '.json'
-        if os.path.exists(filename):
-            show_error_popup(self.window, "ข้อผิดพลาด", "ไฟล์นี้มีอยู่แล้ว")
-            return
         self.current_model_file = filename
         self.poses = {}
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump({"poses": {}}, f, ensure_ascii=False, indent=2)
-        self.model_name_label.configure(text=filename)
+        self.model_name_label.configure(text=os.path.basename(filename))
         self.stats_label.configure(text=self.get_stats_text())
         self.update_pose_list()
         show_success_popup(self.window, "สร้างโมเดลสำเร็จ")
@@ -343,15 +357,17 @@ class BodyPoseManager:
         detail.pack(pady=5)
 
         def do_import():
-            detected_count = [0]
-            skipped_count = [0]
-
             def cb(current, total, class_name):
-                try:
-                    progress.set(current / total if total > 0 else 0)
-                    status.configure(text=f"{class_name}: {current}/{total} รูป")
-                except Exception:
-                    pass
+                pct = current / total if total > 0 else 0
+                msg = f"{class_name}: {current}/{total} รูป"
+
+                def apply():
+                    try:
+                        progress.set(pct)
+                        status.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             result = self.recognition.load_dataset(folder, progress_cb=cb)
 
@@ -359,20 +375,24 @@ class BodyPoseManager:
                 if name not in self.poses:
                     self.poses[name] = []
                 self.poses[name].extend(features_list)
-                detected_count[0] += len(features_list)
 
             self.save_model_to_file()
 
-            try:
-                total_added = sum(len(v) for v in result.values())
-                num_classes = len(result)
-                status.configure(text=f"เสร็จ: {num_classes} ท่า, {total_added} ตัวอย่าง")
-                detail.configure(text=f"ท่าทาง: {', '.join(result.keys()) if result else '-'}")
-                self.stats_label.configure(text=self.get_stats_text())
-                self.update_pose_list()
-                popup.after(3000, popup.destroy)
-            except Exception:
-                pass
+            total_added = sum(len(v) for v in result.values())
+            num_classes = len(result)
+            stats_text = self.get_stats_text()
+            classes_str = ', '.join(result.keys()) if result else '-'
+
+            def finalize():
+                try:
+                    status.configure(text=f"เสร็จ: {num_classes} ท่า, {total_added} ตัวอย่าง")
+                    detail.configure(text=f"ท่าทาง: {classes_str}")
+                    self.stats_label.configure(text=stats_text)
+                    self.update_pose_list()
+                    popup.after(3000, popup.destroy)
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_import, daemon=True).start()
 
@@ -413,12 +433,17 @@ class BodyPoseManager:
             model_data = {"poses": self.poses}
 
             def cb(epoch, tl, ta, vl, va):
-                try:
-                    pbar.set((epoch + 1) / total_epochs)
-                    slabel.configure(text=f"Epoch {epoch+1}/{total_epochs} | "
-                                         f"Train: {ta:.1f}% | Val: {va:.1f}%")
-                except Exception:
-                    pass
+                pct = (epoch + 1) / total_epochs
+                msg = (f"Epoch {epoch+1}/{total_epochs} | "
+                       f"Train: {ta:.1f}% | Val: {va:.1f}%")
+
+                def apply():
+                    try:
+                        pbar.set(pct)
+                        slabel.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             stats = self.recognition.train_mlp(model_data, epochs=total_epochs,
                                                 verbose=False, progress_callback=cb)
@@ -426,19 +451,23 @@ class BodyPoseManager:
             if self.current_model_file:
                 self.recognition.save_mlp(self.current_model_file)
 
-            try:
-                if stats:
-                    slabel.configure(text="Training เสร็จสิ้น!")
-                    va = stats.get('final_val_accuracy', 0)
-                    ta = stats.get('final_accuracy', 0)
-                    rlabel.configure(text=f"Train: {ta:.1f}% | Val: {va:.1f}%")
-                    self.mlp_status_label.configure(
-                        text=f"MLP พร้อม: {len(self.recognition.body_mlp.classes)} ท่า",
-                        text_color="#2ecc71")
-                close_btn.configure(state="normal")
-                pbar.set(1.0)
-            except Exception:
-                pass
+            num_classes = len(self.recognition.body_mlp.classes)
+
+            def finalize():
+                try:
+                    if stats:
+                        slabel.configure(text="Training เสร็จสิ้น!")
+                        va = stats.get('final_val_accuracy', 0)
+                        ta = stats.get('final_accuracy', 0)
+                        rlabel.configure(text=f"Train: {ta:.1f}% | Val: {va:.1f}%")
+                        self.mlp_status_label.configure(
+                            text=f"MLP พร้อม: {num_classes} ท่า",
+                            text_color="#2ecc71")
+                    close_btn.configure(state="normal")
+                    pbar.set(1.0)
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_train, daemon=True).start()
 
@@ -556,10 +585,8 @@ class BodyPoseManager:
 
                 display = draw_thai_text(display, text, (20, 20), self.thai_font_video, color)
 
-                try:
-                    self.pose_label.configure(text=text if pose_name else "ไม่รู้จัก")
-                except Exception:
-                    pass
+                label_text = text if pose_name else "ไม่รู้จัก"
+                self._after_safe(lambda t=label_text: self._set_pose_label(t))
 
             display_frame_on_canvas(display, self.canvas, self.canvas_width, self.canvas_height)
             time.sleep(0.03)
@@ -575,6 +602,12 @@ class BodyPoseManager:
             pass
         if self.running:
             self.window.after(1000, self.update_gui)
+
+    def _set_pose_label(self, text):
+        try:
+            self.pose_label.configure(text=text)
+        except Exception:
+            pass
 
     def on_closing(self):
         self.running = False

@@ -165,7 +165,12 @@ class BaseMLP:
 
     @staticmethod
     def _stratified_split(X: np.ndarray, y: np.ndarray, val_ratio: float = 0.2, rng=None):
-        """Stratified train/val split ให้แต่ละ class มี proportion เท่ากัน"""
+        """Stratified train/val split ให้แต่ละ class มี proportion เท่ากัน
+
+        - Class ที่มีตัวอย่างเดียว: ทั้งตัวอย่างเข้า train set (ไม่มี val)
+          เพื่อให้โมเดลยังเรียนรู้ class นั้นได้
+        - Class ≥ 2 ตัวอย่าง: แบ่งตาม val_ratio (อย่างน้อย 1 ตัวอย่างใน train และ val)
+        """
         if rng is None:
             rng = np.random.default_rng(42)
 
@@ -175,7 +180,13 @@ class BaseMLP:
         for c in classes:
             c_idx = np.where(y == c)[0]
             rng.shuffle(c_idx)
-            n_val = max(1, int(len(c_idx) * val_ratio))
+            n = len(c_idx)
+            if n <= 1:
+                # Single sample: keep it in train so the class is learnable.
+                train_idx.extend(c_idx)
+                continue
+            n_val = max(1, int(round(n * val_ratio)))
+            n_val = min(n_val, n - 1)  # always leave ≥ 1 sample for training
             val_idx.extend(c_idx[:n_val])
             train_idx.extend(c_idx[n_val:])
 
@@ -211,8 +222,16 @@ class BaseMLP:
         train_idx, val_idx = self._stratified_split(X_orig, y_orig, val_ratio=0.2, rng=self._rng)
         X_train_orig = X_orig[train_idx]
         y_train_orig = y_orig[train_idx]
-        X_val_orig = X_orig[val_idx]
-        y_val_orig = y_orig[val_idx]
+        # If every class only had 1 sample, val_idx is empty — fall back to using
+        # the train set as a degenerate val set so metrics stay numeric.
+        if len(val_idx) == 0:
+            X_val_orig = X_train_orig
+            y_val_orig = y_train_orig
+            if verbose:
+                print("  [warn] no val samples (every class has 1 sample) — using train as val")
+        else:
+            X_val_orig = X_orig[val_idx]
+            y_val_orig = y_orig[val_idx]
 
         # === Feature normalization — fit on train only ===
         self.feature_mean = np.mean(X_train_orig, axis=0)
@@ -392,6 +411,10 @@ class BaseMLP:
             'val_losses': self.val_losses[-10:] if self.val_losses else [],
             'val_accuracies': self.val_accuracies[-10:] if self.val_accuracies else [],
         }
+        # Persist any subclass-specific flags that affect inference (e.g.
+        # HandMLP.has_angles) so they don't have to be guessed at load time.
+        if hasattr(self, 'has_angles'):
+            data['has_angles'] = bool(self.has_angles)
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False)
 
@@ -414,6 +437,9 @@ class BaseMLP:
             self.train_accuracies = data.get('train_accuracies', [])
             self.val_losses = data.get('val_losses', [])
             self.val_accuracies = data.get('val_accuracies', [])
+            # Restore subclass-specific inference flag if present in the file.
+            if 'has_angles' in data and hasattr(self, 'has_angles'):
+                self.has_angles = bool(data['has_angles'])
             return True
         except Exception as e:
             print(f"Error loading MLP model: {e}")

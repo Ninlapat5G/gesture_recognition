@@ -38,6 +38,10 @@ class HandMLP(BaseMLP):
             else:
                 hidden_sizes = [128, 64]
         super().__init__(input_size, hidden_sizes, learning_rate)
+        # Flag set during training: True if real angles were used, False if the
+        # angle slot was zero-padded from legacy 210-dim samples. Persisted via
+        # save/load so prediction doesn't have to guess from feature_mean.
+        self.has_angles = True
 
     # ---- Feature extraction (single hand) ----
 
@@ -128,6 +132,10 @@ class HandMLP(BaseMLP):
         self.classes = sorted(gestures.keys())
         class_to_idx = {name: i for i, name in enumerate(self.classes)}
 
+        # Track whether *any* sample provided real angles. If every sample is
+        # legacy 210-dim, predict_from_landmarks will zero-pad at inference.
+        any_real_angles = False
+
         for name, samples in gestures.items():
             for sample in samples:
                 if hand_type == 'both':
@@ -143,6 +151,7 @@ class HandMLP(BaseMLP):
                         hand_size = dists[self.HAND_SIZE_INDEX] + 1e-8
                         dists = dists / hand_size
                         feature = np.concatenate([dists, angles])
+                        any_real_angles = True
                     elif len(sample) == 210:
                         # Old format: distances only, pad zeros for angles
                         dists = np.array(sample)
@@ -154,6 +163,9 @@ class HandMLP(BaseMLP):
 
                 X_list.append(feature)
                 y_list.append(class_to_idx[name])
+
+        # both-hands models always use 861-dim features (no angle slot)
+        self.has_angles = any_real_angles if hand_type != 'both' else True
 
         # Wrap progress_callback to match BaseMLP signature
         cb = None
@@ -169,18 +181,17 @@ class HandMLP(BaseMLP):
     # ---- Prediction ----
 
     def predict_from_landmarks(self, landmarks) -> Tuple[str, float]:
-        """ทำนายท่ามือเดี่ยวจาก MediaPipe landmarks"""
-        # Auto-detect: model trained with real angles or zeros?
-        use_real_angles = True
-        if self.feature_mean is not None and len(self.feature_mean) >= 225:
-            angles_mean = np.mean(np.abs(self.feature_mean[210:225]))
-            if angles_mean < 0.001:
-                use_real_angles = False
+        """ทำนายท่ามือเดี่ยวจาก MediaPipe landmarks
 
+        Uses the explicit ``has_angles`` flag set during training (or restored
+        on load) instead of guessing from feature_mean — fixes a fragile
+        heuristic that mis-detected the format when real angles happened to be
+        near zero (e.g. fully-extended fingers across all training samples).
+        """
         distances = self.calculate_distances(landmarks)
         distances = self.normalize_distances_by_hand_size(distances)
 
-        if use_real_angles:
+        if getattr(self, 'has_angles', True):
             angles = self.calculate_angles(landmarks)
         else:
             angles = np.zeros(15)

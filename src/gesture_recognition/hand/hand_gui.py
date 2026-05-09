@@ -53,6 +53,11 @@ class GestureModelManager:
         # HandRecognition instance for recognition API
         self.recognition = HandRecognition(font_path=font_path, mode="mae", smoothing_window=0)
 
+        # Separate recognition instances for compare mode so each model can
+        # carry its own MLP weights and recognition mode independently.
+        self.recognition1 = HandRecognition(font_path=font_path, mode="mae", smoothing_window=0)
+        self.recognition2 = HandRecognition(font_path=font_path, mode="mae", smoothing_window=0)
+
         # Global variables
         self.current_mode = "create"
         self.current_model_file = None
@@ -689,33 +694,33 @@ class GestureModelManager:
     # =========================================================================
 
     def create_new_model(self):
-        dialog = ctk.CTkInputDialog(
-            text="ชื่อไฟล์โมเดล (ไม่ต้องใส่ .json):",
-            title="สร้างโมเดลใหม่"
+        # Ask for an explicit save location so the model file doesn't end up
+        # in the current working directory (which the user can't see).
+        filename = filedialog.asksaveasfilename(
+            title="สร้างโมเดลใหม่ — เลือกที่บันทึก",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")],
+            initialfile="hand_model.json",
         )
-        filename = dialog.get_input()
+        if not filename:
+            return
 
-        if filename:
-            if not filename.endswith('.json'):
-                filename += '.json'
+        if not filename.endswith('.json'):
+            filename += '.json'
 
-            if os.path.exists(filename):
-                show_error_popup(self.window, "ข้อผิดพลาด", "ไฟล์นี้มีอยู่แล้ว")
-                return
+        self.current_model_file = filename
+        self.gestures = {'left': {}, 'right': {}, 'both': {}}
 
-            self.current_model_file = filename
-            self.gestures = {'left': {}, 'right': {}, 'both': {}}
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(self.gestures, f, ensure_ascii=False, indent=2)
 
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(self.gestures, f, ensure_ascii=False, indent=2)
+        self.model_name_label.configure(text=os.path.basename(filename))
+        self.stats_label.configure(text=self.get_stats_text())
+        self.update_gesture_list()
 
-            self.model_name_label.configure(text=f"{filename}")
-            self.stats_label.configure(text=self.get_stats_text())
-            self.update_gesture_list()
+        self.switch_mode("create")
 
-            self.switch_mode("create")
-
-            show_success_popup(self.window, "สร้างโมเดลสำเร็จ")
+        show_success_popup(self.window, "สร้างโมเดลสำเร็จ")
 
     def load_model(self):
         filename = filedialog.askopenfilename(
@@ -783,6 +788,11 @@ class GestureModelManager:
                 # Ensure 'both' key exists for older models
                 if 'both' not in gestures:
                     gestures['both'] = {}
+
+                # Load each model's MLP into its own recognition instance so
+                # the two models can be compared in different modes.
+                rec = self.recognition1 if model_num == 1 else self.recognition2
+                rec.load_mlp(filename)
 
                 if model_num == 1:
                     self.model1_file = filename
@@ -2042,13 +2052,15 @@ class GestureModelManager:
                             hand_label = handedness.classification[0].label
                             hand_type = 'left' if hand_label == 'Left' else 'right'
 
-                            # Use HandRecognition API for compare mode
-                            gesture1, conf1 = self.recognition.recognize_from_landmarks(
+                            # Each compare model uses its own HandRecognition
+                            # instance so MLP weights / recognition mode don't
+                            # bleed between the two.
+                            gesture1, conf1 = self.recognition1.recognize_from_landmarks(
                                 landmarks, hand_type, self.model1_gestures
                             )
                             text1 = f"{gesture1} ({conf1:.1f}%)" if conf1 > 0 else gesture1
 
-                            gesture2, conf2 = self.recognition.recognize_from_landmarks(
+                            gesture2, conf2 = self.recognition2.recognize_from_landmarks(
                                 landmarks, hand_type, self.model2_gestures
                             )
                             text2 = f"{gesture2} ({conf2:.1f}%)" if conf2 > 0 else gesture2

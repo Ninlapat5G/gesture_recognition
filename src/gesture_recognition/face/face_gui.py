@@ -93,6 +93,25 @@ class FaceExpressionManager:
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # =========================================================================
+    # Thread-safe GUI helper
+    # =========================================================================
+
+    def _after_safe(self, fn):
+        """Schedule fn on the main tkinter thread; swallow errors during shutdown."""
+        if not self.running:
+            return
+        try:
+            self.window.after(0, fn)
+        except Exception:
+            pass
+
+    def _set_expression_label(self, text):
+        try:
+            self.expression_label.configure(text=text)
+        except Exception:
+            pass
+
+    # =========================================================================
     # Layout
     # =========================================================================
 
@@ -277,20 +296,21 @@ class FaceExpressionManager:
     # =========================================================================
 
     def create_new_model(self):
-        dialog = ctk.CTkInputDialog(text="ชื่อไฟล์โมเดล (ไม่ต้องใส่ .json):", title="สร้างโมเดลใหม่")
-        filename = dialog.get_input()
+        filename = filedialog.asksaveasfilename(
+            title="สร้างโมเดลใหม่ — เลือกที่บันทึก",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")],
+            initialfile="face_model.json",
+        )
         if not filename:
             return
         if not filename.endswith('.json'):
             filename += '.json'
-        if os.path.exists(filename):
-            show_error_popup(self.window, "ข้อผิดพลาด", "ไฟล์นี้มีอยู่แล้ว")
-            return
         self.current_model_file = filename
         self.expressions = {}
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump({"expressions": {}}, f, ensure_ascii=False, indent=2)
-        self.model_name_label.configure(text=filename)
+        self.model_name_label.configure(text=os.path.basename(filename))
         self.stats_label.configure(text=self.get_stats_text())
         self.update_expression_list()
         show_success_popup(self.window, "สร้างโมเดลสำเร็จ")
@@ -358,11 +378,12 @@ class FaceExpressionManager:
     def start_countdown(self):
         self.countdown_active = True
         self.countdown_value = 3
-        self._countdown_tick()
+        # Show "3" for one second before decrementing.
+        self.window.after(1000, self._countdown_tick)
 
     def _countdown_tick(self):
+        self.countdown_value -= 1
         if self.countdown_value > 0:
-            self.countdown_value -= 1
             self.window.after(1000, self._countdown_tick)
         else:
             self.countdown_active = False
@@ -424,11 +445,16 @@ class FaceExpressionManager:
 
         def do_import():
             def cb(current, total, class_name):
-                try:
-                    progress.set(current / total if total > 0 else 0)
-                    status.configure(text=f"{class_name}: {current}/{total}")
-                except Exception:
-                    pass
+                pct = current / total if total > 0 else 0
+                msg = f"{class_name}: {current}/{total}"
+
+                def apply():
+                    try:
+                        progress.set(pct)
+                        status.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             result = self.recognition.load_dataset(folder, progress_cb=cb)
 
@@ -439,14 +465,19 @@ class FaceExpressionManager:
 
             self.save_model_to_file()
 
-            try:
-                total_added = sum(len(v) for v in result.values())
-                status.configure(text=f"เสร็จ: {len(result)} ท่า, {total_added} ตัวอย่าง")
-                self.stats_label.configure(text=self.get_stats_text())
-                self.update_expression_list()
-                popup.after(2000, popup.destroy)
-            except Exception:
-                pass
+            total_added = sum(len(v) for v in result.values())
+            num_classes = len(result)
+            stats_text = self.get_stats_text()
+
+            def finalize():
+                try:
+                    status.configure(text=f"เสร็จ: {num_classes} ท่า, {total_added} ตัวอย่าง")
+                    self.stats_label.configure(text=stats_text)
+                    self.update_expression_list()
+                    popup.after(2000, popup.destroy)
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_import, daemon=True).start()
 
@@ -486,12 +517,17 @@ class FaceExpressionManager:
             model_data = {"expressions": self.expressions}
 
             def cb(epoch, tl, ta, vl, va):
-                try:
-                    pbar.set((epoch + 1) / total_epochs)
-                    slabel.configure(text=f"Epoch {epoch+1}/{total_epochs} | "
-                                         f"Train: {ta:.1f}% | Val: {va:.1f}%")
-                except Exception:
-                    pass
+                pct = (epoch + 1) / total_epochs
+                msg = (f"Epoch {epoch+1}/{total_epochs} | "
+                       f"Train: {ta:.1f}% | Val: {va:.1f}%")
+
+                def apply():
+                    try:
+                        pbar.set(pct)
+                        slabel.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             stats = self.recognition.train_mlp(model_data, epochs=total_epochs,
                                                 verbose=False, progress_callback=cb)
@@ -499,19 +535,23 @@ class FaceExpressionManager:
             if self.current_model_file:
                 self.recognition.save_mlp(self.current_model_file)
 
-            try:
-                if stats:
-                    slabel.configure(text="Training เสร็จสิ้น!")
-                    va = stats.get('final_val_accuracy', 0)
-                    ta = stats.get('final_accuracy', 0)
-                    rlabel.configure(text=f"Train: {ta:.1f}% | Val: {va:.1f}%")
-                    self.mlp_status_label.configure(
-                        text=f"MLP พร้อม: {len(self.recognition.face_mlp.classes)} ท่า",
-                        text_color="#2ecc71")
-                close_btn.configure(state="normal")
-                pbar.set(1.0)
-            except Exception:
-                pass
+            num_classes = len(self.recognition.face_mlp.classes)
+
+            def finalize():
+                try:
+                    if stats:
+                        slabel.configure(text="Training เสร็จสิ้น!")
+                        va = stats.get('final_val_accuracy', 0)
+                        ta = stats.get('final_accuracy', 0)
+                        rlabel.configure(text=f"Train: {ta:.1f}% | Val: {va:.1f}%")
+                        self.mlp_status_label.configure(
+                            text=f"MLP พร้อม: {num_classes} ท่า",
+                            text_color="#2ecc71")
+                    close_btn.configure(state="normal")
+                    pbar.set(1.0)
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_train, daemon=True).start()
 
@@ -646,10 +686,8 @@ class FaceExpressionManager:
 
                 display = draw_thai_text(display, text, (20, 20), self.thai_font_video, color)
 
-                try:
-                    self.expression_label.configure(text=text if expression else "ไม่รู้จัก")
-                except Exception:
-                    pass
+                label_text = text if expression else "ไม่รู้จัก"
+                self._after_safe(lambda t=label_text: self._set_expression_label(t))
 
             # Countdown overlay
             if self.countdown_active and self.countdown_value > 0:
