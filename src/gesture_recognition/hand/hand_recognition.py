@@ -336,20 +336,33 @@ class HandRecognition:
         return status, gestures, confidences, results
 
     def _recognize_mae(self, landmarks, hand_type: str, model: Dict) -> Tuple[str, float]:
-        """MAE matching with hand-size normalization"""
-        distances = HandMLP.calculate_distances(landmarks)
-        distances = HandMLP.normalize_distances_by_hand_size(distances)
+        """MAE matching with hand-size normalization (uses 225-dim distances+angles)"""
+        current_full = HandMLP.extract_single_hand_features(landmarks)  # 225 dims (normalized)
+        current_dists = current_full[:210]
 
         best_match = None
         best_score = float('inf')
 
         for name, stored_list in model.get(hand_type, {}).items():
             for stored in stored_list:
-                stored_arr = np.array(stored[:210])
-                # Normalize stored distances too
-                stored_size = stored_arr[HandMLP.HAND_SIZE_INDEX] + 1e-8
-                stored_norm = stored_arr / stored_size
-                score = np.mean(np.abs(distances - stored_norm))
+                stored_arr = np.array(stored)
+                if stored_arr.size < 210:
+                    continue
+
+                stored_dists = stored_arr[:210]
+                # Defensive re-normalization: a no-op for already-normalized samples,
+                # but covers any future format that stores raw distances.
+                size_val = stored_dists[HandMLP.HAND_SIZE_INDEX]
+                if size_val > 1e-6 and abs(size_val - 1.0) > 1e-6:
+                    stored_dists = stored_dists / (size_val + 1e-8)
+
+                if stored_arr.size >= 225:
+                    stored_angles = stored_arr[210:225]
+                    score = np.mean(np.abs(current_full - np.concatenate([stored_dists, stored_angles])))
+                else:
+                    # Old format (distances only) — compare distance part only
+                    score = np.mean(np.abs(current_dists - stored_dists))
+
                 if score < best_score:
                     best_score = score
                     best_match = name

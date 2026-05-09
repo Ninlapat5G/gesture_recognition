@@ -80,14 +80,15 @@ def draw_thai_text(image: np.ndarray, text: str, position: Tuple[int, int],
 
 def draw_countdown_overlay(frame: np.ndarray, value: int,
                            font: ImageFont.FreeTypeFont) -> np.ndarray:
-    """วาด countdown overlay (3, 2, 1) ตรงกลางภาพ"""
+    """วาด countdown overlay (3, 2, 1) ตรงกลางภาพ — ไม่แก้ frame ต้นฉบับ"""
     h, w = frame.shape[:2]
-    overlay = frame.copy()
+    out = frame.copy()
+    overlay = out.copy()
     cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
+    cv2.addWeighted(overlay, 0.5, out, 0.5, 0, out)
 
     text = str(value)
-    img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    img_pil = Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img_pil)
     bbox = draw.textbbox((0, 0), text, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]

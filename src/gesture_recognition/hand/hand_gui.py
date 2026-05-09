@@ -111,6 +111,36 @@ class GestureModelManager:
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # =========================================================================
+    # Thread-safe GUI helper
+    # =========================================================================
+
+    def _after_safe(self, fn):
+        """Schedule fn on the main tkinter thread; swallow errors during shutdown."""
+        if not self.running:
+            return
+        try:
+            self.window.after(0, fn)
+        except Exception:
+            pass
+
+    def _update_single_labels(self, left, right, both):
+        try:
+            self.left_gesture_label.configure(text=left)
+            self.right_gesture_label.configure(text=right)
+            self.both_gesture_label.configure(text=both)
+        except Exception:
+            pass
+
+    def _update_compare_labels(self, m1l, m1r, m2l, m2r):
+        try:
+            self.model1_left_label.configure(text=m1l)
+            self.model1_right_label.configure(text=m1r)
+            self.model2_left_label.configure(text=m2l)
+            self.model2_right_label.configure(text=m2r)
+        except Exception:
+            pass
+
+    # =========================================================================
     # Layout
     # =========================================================================
 
@@ -936,14 +966,17 @@ class GestureModelManager:
 
             def progress_callback(hand_type, epoch, train_loss, train_acc, val_loss, val_acc):
                 hn = hand_names.get(hand_type, hand_type)
-                try:
-                    progress_bar.set((epoch + 1) / total_epochs)
-                    status_label.configure(
-                        text=f"{hn}: Epoch {epoch+1}/{total_epochs} | "
-                             f"Loss: {train_loss:.4f} | Train: {train_acc:.1f}% | Val: {val_acc:.1f}%"
-                    )
-                except:
-                    pass
+                msg = (f"{hn}: Epoch {epoch+1}/{total_epochs} | "
+                       f"Loss: {train_loss:.4f} | Train: {train_acc:.1f}% | Val: {val_acc:.1f}%")
+                pct = (epoch + 1) / total_epochs
+
+                def apply():
+                    try:
+                        progress_bar.set(pct)
+                        status_label.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             # Use recognition API to train all hand types
             results = self.recognition.train_mlp(
@@ -967,25 +1000,25 @@ class GestureModelManager:
             if self.current_model_file:
                 self.recognition.save_mlp(self.current_model_file)
 
-            try:
-                status_label.configure(text="Training เสร็จสิ้น!")
-                result_label.configure(text=results_text)
-                close_btn.configure(state="normal")
-                progress_bar.set(1.0)
+            mlp_status = []
+            if self.recognition.mlp_left.is_trained:
+                mlp_status.append(f"ซ้าย: {len(self.recognition.mlp_left.classes)} ท่า")
+            if self.recognition.mlp_right.is_trained:
+                mlp_status.append(f"ขวา: {len(self.recognition.mlp_right.classes)} ท่า")
+            if self.recognition.mlp_both.is_trained:
+                mlp_status.append(f"2มือ: {len(self.recognition.mlp_both.classes)} ท่า")
+            mlp_status_text = "MLP พร้อมใช้งาน | " + " | ".join(mlp_status)
 
-                mlp_status = []
-                if self.recognition.mlp_left.is_trained:
-                    mlp_status.append(f"ซ้าย: {len(self.recognition.mlp_left.classes)} ท่า")
-                if self.recognition.mlp_right.is_trained:
-                    mlp_status.append(f"ขวา: {len(self.recognition.mlp_right.classes)} ท่า")
-                if self.recognition.mlp_both.is_trained:
-                    mlp_status.append(f"2มือ: {len(self.recognition.mlp_both.classes)} ท่า")
-                self.mlp_status_label.configure(
-                    text="MLP พร้อมใช้งาน | " + " | ".join(mlp_status),
-                    text_color="#2ecc71"
-                )
-            except:
-                pass
+            def finalize():
+                try:
+                    status_label.configure(text="Training เสร็จสิ้น!")
+                    result_label.configure(text=results_text)
+                    close_btn.configure(state="normal")
+                    progress_bar.set(1.0)
+                    self.mlp_status_label.configure(text=mlp_status_text, text_color="#2ecc71")
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_train, daemon=True).start()
 
@@ -1105,6 +1138,19 @@ class GestureModelManager:
             width=80,
             height=22
         )
+        # Delete button — removes the entire gesture (with confirmation)
+        delete_btn = ctk.CTkButton(
+            content_frame,
+            text="ลบ",
+            width=45,
+            height=24,
+            font=ctk.CTkFont(size=12),
+            fg_color="#e74c3c",
+            hover_color="#c0392b",
+            command=lambda n=name, h=hand_type: self.delete_gesture(n, h)
+        )
+        delete_btn.pack(side="right", padx=(5, 0))
+
         badge.pack(side="right", padx=(5, 0))
         badge.bind("<Button-1>", lambda e: self.select_gesture(name, hand_type))
 
@@ -1143,6 +1189,60 @@ class GestureModelManager:
         else:
             self.selected_indicator_frame.pack_forget()
             self.add_sample_button.configure(state="disabled")
+
+    # =========================================================================
+    # Delete a single gesture
+    # =========================================================================
+
+    def delete_gesture(self, name, hand_type):
+        """Delete a single gesture (with confirmation)."""
+        if not self.current_model_file:
+            show_error_popup(self.window, "ข้อผิดพลาด", "ยังไม่ได้เลือกโมเดล")
+            return
+        if name not in self.gestures.get(hand_type, {}):
+            return
+
+        sample_count = len(self.gestures[hand_type][name])
+        hand_label = {'left': 'มือซ้าย', 'right': 'มือขวา', 'both': '2 มือ'}.get(hand_type, hand_type)
+
+        popup = ctk.CTkToplevel(self.window)
+        popup.title("ยืนยันการลบ")
+        popup.geometry("400x240")
+        popup.transient(self.window)
+        popup.grab_set()
+
+        popup.update_idletasks()
+        x = (popup.winfo_screenwidth() // 2) - 200
+        y = (popup.winfo_screenheight() // 2) - 120
+        popup.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(popup, text="ยืนยันการลบ",
+                     font=ctk.CTkFont(size=20, weight="bold"),
+                     text_color="#e74c3c").pack(pady=(20, 10))
+        ctk.CTkLabel(popup,
+                     text=f"ลบท่าทาง '{name}' ({hand_label})\nและตัวอย่างทั้งหมด {sample_count} ชิ้น?",
+                     font=ctk.CTkFont(size=14)).pack(pady=10)
+
+        btn_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def confirm():
+            del self.gestures[hand_type][name]
+            with open(self.current_model_file, 'w', encoding='utf-8') as f:
+                json.dump(self.gestures, f, ensure_ascii=False, indent=2)
+            if (self.selected_gesture_name == name and
+                    self.selected_gesture_hand == hand_type):
+                self.selected_gesture_name = None
+                self.selected_gesture_hand = None
+            self.stats_label.configure(text=self.get_stats_text())
+            self.update_gesture_list()
+            popup.destroy()
+
+        ctk.CTkButton(btn_frame, text="ลบ", command=confirm,
+                      fg_color="#e74c3c", hover_color="#c0392b",
+                      width=120, font=ctk.CTkFont(size=14)).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="ยกเลิก", command=popup.destroy,
+                      width=120, font=ctk.CTkFont(size=14)).pack(side="left", padx=5)
 
     # =========================================================================
     # Clear gestures
@@ -1234,21 +1334,27 @@ class GestureModelManager:
             )
             return
 
+        # Snapshot only — release the lock before opening any modal so the
+        # capture thread keeps running while the popup is visible.
         with self.lock:
-            if not self.hand_landmarks or not self.hand_handedness:
-                show_error_popup(
-                    self.window,
-                    "ไม่พบมือ",
-                    "กรุณาแสดงมือให้กล้องเห็น\nก่อนบันทึกท่าทาง"
-                )
-                return
+            if not self.hand_landmarks or not self.hand_handedness or self.frame is None:
+                snapshot = None
+            else:
+                hand_label = self.hand_handedness[0].classification[0].label
+                hand_type = 'left' if hand_label == 'Left' else 'right'
+                landmarks = self.hand_landmarks[0]
+                cropped_frame = self.crop_hand(self.frame, landmarks)
+                snapshot = (cropped_frame, landmarks, hand_type)
 
-            hand_label = self.hand_handedness[0].classification[0].label
-            hand_type = 'left' if hand_label == 'Left' else 'right'
-            cropped_frame = self.crop_hand(self.frame, self.hand_landmarks[0])
-            landmarks = self.hand_landmarks[0]
+        if snapshot is None:
+            show_error_popup(
+                self.window,
+                "ไม่พบมือ",
+                "กรุณาแสดงมือให้กล้องเห็น\nก่อนบันทึกท่าทาง"
+            )
+            return
 
-            self.show_new_gesture_popup(cropped_frame, landmarks, hand_type)
+        self.show_new_gesture_popup(*snapshot)
 
     def add_gesture_sample(self):
         if not self.current_model_file:
@@ -1273,31 +1379,33 @@ class GestureModelManager:
             self.start_countdown_capture(is_new=False)
             return
 
+        # Snapshot landmarks under lock; do the rest on the main thread.
+        snapshot = None
         with self.lock:
-            if not self.hand_landmarks or not self.hand_handedness:
-                show_error_popup(
-                    self.window,
-                    "ไม่พบมือ",
-                    "กรุณาแสดงมือให้กล้องเห็น\nก่อนบันทึกท่าทาง"
-                )
-                return
+            if self.hand_landmarks and self.hand_handedness and self.frame is not None:
+                # Find the landmarks that match the selected hand type — not
+                # just hand_landmarks[0], which may be the *other* hand when
+                # two hands are visible.
+                matched_landmarks = None
+                for lm, hd in zip(self.hand_landmarks, self.hand_handedness):
+                    label = hd.classification[0].label
+                    ht = 'left' if label == 'Left' else 'right'
+                    if ht == self.selected_gesture_hand:
+                        matched_landmarks = lm
+                        break
+                if matched_landmarks is not None:
+                    snapshot = (self.crop_hand(self.frame, matched_landmarks), matched_landmarks)
 
-            hand_label = self.hand_handedness[0].classification[0].label
-            detected_hand_type = 'left' if hand_label == 'Left' else 'right'
+        if snapshot is None:
+            hand_name = "ซ้าย" if self.selected_gesture_hand == 'left' else "ขวา"
+            show_error_popup(
+                self.window,
+                "ไม่พบมือ",
+                f"กรุณาแสดงมือ{hand_name}ให้กล้องเห็น\nก่อนเพิ่มตัวอย่าง"
+            )
+            return
 
-            if detected_hand_type != self.selected_gesture_hand:
-                hand_name = "ซ้าย" if self.selected_gesture_hand == 'left' else "ขวา"
-                show_error_popup(
-                    self.window,
-                    "มือไม่ตรงกัน",
-                    f"ท่าทางที่เลือกเป็นมือ{hand_name}\nกรุณาแสดงมือ{hand_name}ให้กล้องเห็น"
-                )
-                return
-
-            cropped_frame = self.crop_hand(self.frame, self.hand_landmarks[0])
-            landmarks = self.hand_landmarks[0]
-
-            self.quick_add_sample(cropped_frame, landmarks)
+        self.quick_add_sample(*snapshot)
 
     def show_new_gesture_popup(self, cropped_frame, landmarks, hand_type):
         popup = ctk.CTkToplevel(self.window)
@@ -1468,18 +1576,16 @@ class GestureModelManager:
         self.countdown_active = True
         self.countdown_value = 3
         self._countdown_is_new = is_new
-        self._countdown_tick()
+        # Show "3" for one second before decrementing so the user actually sees it.
+        self.window.after(1000, self._countdown_tick)
 
     def _countdown_tick(self):
-        """Callback for each countdown second."""
+        """Decrement, then either schedule the next tick or trigger capture."""
+        self.countdown_value -= 1
         if self.countdown_value > 0:
-            self.countdown_value -= 1
-            if self.countdown_value > 0:
-                self.window.after(1000, self._countdown_tick)
-            else:
-                # countdown = 0, capture now!
-                self.window.after(1000, self._capture_both_hands)
+            self.window.after(1000, self._countdown_tick)
         else:
+            # value reached 0 — overlay hides itself; capture immediately.
             self._capture_both_hands()
 
     def _capture_both_hands(self):
@@ -1684,13 +1790,16 @@ class GestureModelManager:
                 return HandMLP.extract_single_hand_features(landmarks)
 
             def progress_cb(current, total, class_name):
-                try:
-                    progress_bar.set(current / total if total > 0 else 0)
-                    status_label.configure(
-                        text=f"กำลังประมวลผล: {class_name} ({current}/{total})"
-                    )
-                except:
-                    pass
+                pct = current / total if total > 0 else 0
+                msg = f"กำลังประมวลผล: {class_name} ({current}/{total})"
+
+                def apply():
+                    try:
+                        progress_bar.set(pct)
+                        status_label.configure(text=msg)
+                    except Exception:
+                        pass
+                self._after_safe(apply)
 
             result = load_dataset_from_folder(folder, detect_fn, extract_fn, progress_cb)
             hands_detector.close()
@@ -1714,20 +1823,22 @@ class GestureModelManager:
                 with open(self.current_model_file, 'w', encoding='utf-8') as f:
                     json.dump(self.gestures, f, ensure_ascii=False, indent=2)
 
-            try:
-                hand_name = "มือซ้าย" if hand_type == "left" else "มือขวา"
-                progress_bar.set(1.0)
-                status_label.configure(text="นำเข้าเสร็จสิ้น!")
-                result_label.configure(
-                    text=f"นำเข้า {total_gestures} ท่าทาง ({total_samples} ตัวอย่าง)\n"
-                         f"ประเภท: {hand_name}"
-                )
-                close_btn.configure(state="normal")
+            hand_name = "มือซ้าย" if hand_type == "left" else "มือขวา"
+            stats_text = self.get_stats_text()
+            result_text = (f"นำเข้า {total_gestures} ท่าทาง ({total_samples} ตัวอย่าง)\n"
+                           f"ประเภท: {hand_name}")
 
-                self.stats_label.configure(text=self.get_stats_text())
-                self.update_gesture_list()
-            except:
-                pass
+            def finalize():
+                try:
+                    progress_bar.set(1.0)
+                    status_label.configure(text="นำเข้าเสร็จสิ้น!")
+                    result_label.configure(text=result_text)
+                    close_btn.configure(state="normal")
+                    self.stats_label.configure(text=stats_text)
+                    self.update_gesture_list()
+                except Exception:
+                    pass
+            self._after_safe(finalize)
 
         threading.Thread(target=do_import, daemon=True).start()
 
@@ -1743,7 +1854,10 @@ class GestureModelManager:
         while self.running:
             ret, captured_frame = cap.read()
             if not ret:
-                break
+                # Transient read failure — keep the loop alive so the feed
+                # can recover instead of dying after one bad frame.
+                time.sleep(0.05)
+                continue
             captured_frame = cv2.flip(captured_frame, 1)
             image_rgb = cv2.cvtColor(captured_frame, cv2.COLOR_BGR2RGB)
             results = self.hands.process(image_rgb)
@@ -1831,10 +1945,10 @@ class GestureModelManager:
                                 if self.use_smoothing:
                                     self.smoother.update('both', both_g, both_c)
                                     both_g, both_c = self.smoother.get_smoothed('both')
-                                if both_c > 0:
+                                if both_c > 0 and both_g:
                                     both_gesture_text = f"{both_g} ({both_c:.1f}%)"
                                 else:
-                                    both_gesture_text = both_g
+                                    both_gesture_text = "-"
 
                         if self.show_text_overlay:
                             mode_text = f"[{self.recognition_mode.upper()}]"
@@ -1898,13 +2012,11 @@ class GestureModelManager:
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness
                         )
 
-                    # Update GUI labels
-                    try:
-                        self.left_gesture_label.configure(text=left_gesture_text)
-                        self.right_gesture_label.configure(text=right_gesture_text)
-                        self.both_gesture_label.configure(text=both_gesture_text)
-                    except:
-                        pass
+                    # Update GUI labels on the main tkinter thread
+                    self._after_safe(
+                        lambda l=left_gesture_text, r=right_gesture_text, b=both_gesture_text:
+                            self._update_single_labels(l, r, b)
+                    )
 
                 else:  # compare mode
                     if local_hand_landmarks:
@@ -1948,14 +2060,11 @@ class GestureModelManager:
                                 model1_right = text1
                                 model2_right = text2
 
-                    # Update GUI labels
-                    try:
-                        self.model1_left_label.configure(text=model1_left)
-                        self.model1_right_label.configure(text=model1_right)
-                        self.model2_left_label.configure(text=model2_left)
-                        self.model2_right_label.configure(text=model2_right)
-                    except:
-                        pass
+                    # Update GUI labels on the main tkinter thread
+                    self._after_safe(
+                        lambda a=model1_left, b=model1_right, c=model2_left, d=model2_right:
+                            self._update_compare_labels(a, b, c, d)
+                    )
 
                 # Prepare image for display
                 self.update_canvas_size()
